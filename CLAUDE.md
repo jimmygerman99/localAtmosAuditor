@@ -1,4 +1,4 @@
-# Atmos Miles Audit — Project Context
+v# Atmos Miles Audit — Project Context
 
 ## What this is
 A local web app (React + TypeScript + Vite + Tailwind CSS) for auditing Alaska/Atmos miles earnings. Users log upcoming flights before they fly, then record what actually posted to their account afterward. The app highlights discrepancies and helps pre-fill Alaska's missing miles claim form.
