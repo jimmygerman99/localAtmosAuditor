@@ -320,6 +320,14 @@ function findIATAsBefore(text: string, pos: number, maxDist = 500): string[] {
     .filter(isIATA);
 }
 
+function findIATAsBeforeWithPos(text: string, pos: number, maxDist = 500): Located<string>[] {
+  const start = Math.max(0, pos - maxDist);
+  const window = text.slice(start, pos);
+  return [...window.matchAll(/\b([A-Z]{3})\b/g)]
+    .filter(m => isIATA(m[1]))
+    .map(m => ({ pos: start + m.index!, value: m[1] }));
+}
+
 function findIATAsAfter(text: string, pos: number, maxDist = 500): string[] {
   const window = text.slice(pos, pos + maxDist);
   return [...window.matchAll(/\b([A-Z]{3})\b/g)]
@@ -500,17 +508,24 @@ function extractSegments(text: string, global: GlobalFields): ParsedFlight[] {
     }
 
     // Strategy 2: Last IATA before the flight number (origin), first IATA after (destination)
-    const iatasBefore = findIATAsBefore(text, flightPos, 500);
-    const iatasAfter = findIATAsAfter(text, flightEnd, 500);
+    const iatasBefore    = findIATAsBefore(text, flightPos, 500);
+    const iatasBeforePos = findIATAsBeforeWithPos(text, flightPos, 500);
+    const iatasAfter     = findIATAsAfter(text, flightEnd, 1200);
 
     if (!origin) origin = iatasBefore[iatasBefore.length - 1];
     if (!destination) destination = iatasAfter[0];
 
     // Strategy 3: Both airports appear BEFORE the flight number (QR, Emirates, many intl airlines)
     // Layout: "10:35 LHR ... 14:35 PHL ... AA 729" — departure then arrival then flight#
-    if (!destination && iatasBefore.length >= 2) {
-      origin      = iatasBefore[iatasBefore.length - 2];
-      destination = iatasBefore[iatasBefore.length - 1];
+    // Guard: the two codes must be within 200 chars of each other to avoid false positives
+    // from unrelated IATA codes scattered earlier in the email.
+    if (!destination && iatasBeforePos.length >= 2) {
+      const last  = iatasBeforePos[iatasBeforePos.length - 1];
+      const penul = iatasBeforePos[iatasBeforePos.length - 2];
+      if (last.pos - penul.pos <= 200) {
+        origin      = penul.value;
+        destination = last.value;
+      }
     }
 
     // Strategy 4: Both airports appear AFTER the flight number
@@ -590,6 +605,114 @@ function extractSegments(text: string, global: GlobalFields): ParsedFlight[] {
   return segments;
 }
 
+// ─── Flight-label fallback ────────────────────────────────────────────────────
+// For emails that write "Flight 1234" near an airline name instead of "AA 1234"
+
+function extractByFlightLabel(text: string, global: GlobalFields): ParsedFlight[] {
+  const allDates = findAllDates(text);
+  const allTimes = findAllTimes(text);
+  const segments: ParsedFlight[] = [];
+  const seen = new Set<string>();
+
+  const FLIGHT_LABEL_RE = /\b(?:Flight|Flt\.?)\s+(\d{1,4})\b/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = FLIGHT_LABEL_RE.exec(text)) !== null) {
+    const flightNum = match[1];
+    const flightPos = match.index;
+    const flightEnd = flightPos + match[0].length;
+
+    const zone = text.slice(Math.max(0, flightPos - 400), flightEnd + 400);
+    const detected = detectAirline(zone);
+    const airline: Airline = global.airline ?? detected?.airline ?? 'partner';
+    const operatingCarrier = global.operatingCarrier ?? detected?.operatingCarrier;
+
+    let origin: string | undefined;
+    let destination: string | undefined;
+
+    const ARROW_RE = /\b([A-Z]{3})\s*(?:→|->|–|—)\s*([A-Z]{3})\b/;
+    const arrowBefore = ARROW_RE.exec(text.slice(Math.max(0, flightPos - 500), flightPos));
+    if (arrowBefore && isIATA(arrowBefore[1]) && isIATA(arrowBefore[2])) {
+      origin = arrowBefore[1]; destination = arrowBefore[2];
+    }
+    if (!origin || !destination) {
+      const arrowAfter = ARROW_RE.exec(text.slice(flightEnd, flightEnd + 500));
+      if (arrowAfter && isIATA(arrowAfter[1]) && isIATA(arrowAfter[2])) {
+        origin = arrowAfter[1]; destination = arrowAfter[2];
+      }
+    }
+
+    const iatasBefore = findIATAsBefore(text, flightPos, 500);
+    const iatasAfter  = findIATAsAfter(text, flightEnd, 500);
+
+    if (!origin)      origin      = iatasBefore[iatasBefore.length - 1];
+    if (!destination) destination = iatasAfter[0];
+
+    if (!destination && iatasBefore.length >= 2) {
+      origin      = iatasBefore[iatasBefore.length - 2];
+      destination = iatasBefore[iatasBefore.length - 1];
+    }
+    if (!origin && iatasAfter.length >= 2) {
+      origin      = iatasAfter[0];
+      destination = iatasAfter[1];
+    }
+
+    if (!origin || !destination || origin === destination) continue;
+
+    const key = `${flightNum}|${origin}|${destination}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const date = lastBefore(allDates, flightPos) ?? firstAfter(allDates, flightPos, 600);
+
+    const originMatch = new RegExp(`\\b${origin}\\b`).exec(
+      text.slice(Math.max(0, flightPos - 400), flightPos),
+    );
+    const originPos = originMatch
+      ? Math.max(0, flightPos - 400) + originMatch.index!
+      : flightPos - 400;
+    const departureTime = firstAfter(allTimes, originPos, 200) ?? lastBefore(allTimes, flightPos);
+
+    const destMatch = new RegExp(`\\b${destination}\\b`).exec(
+      text.slice(flightEnd, flightEnd + 400),
+    );
+    const destPos = destMatch ? flightEnd + destMatch.index! : flightEnd;
+    const arrivalTime = firstAfter(allTimes, destPos, 200);
+
+    const fareZone = text.slice(Math.max(0, flightPos - 100), flightEnd + 600);
+    let fareClass: FareClass | undefined;
+    const akClass = /Class:\s+([A-Z])\s+\(([^)]+)\)/i.exec(fareZone);
+    if (akClass) fareClass = normalizeCabin(akClass[2], airline) ?? ALASKA_BOOKING_CLASS[akClass[1]];
+    if (!fareClass) {
+      const classBlock = /Class\s*:?\s*\n?\s*([A-Za-z][A-Za-z ]{2,25}?)(?:\s*\n|\s*\()/i.exec(fareZone);
+      if (classBlock) fareClass = normalizeCabin(classBlock[1], airline);
+    }
+    if (!fareClass) {
+      const cabinMatch = /\b(economy|business|first class|premium economy|main cabin|main|coach|saver|basic economy)\b/i.exec(fareZone);
+      if (cabinMatch) fareClass = normalizeCabin(cabinMatch[1], airline);
+    }
+    if (!fareClass) {
+      const bkClass = /\(\s*([A-Z])\s*\)/.exec(fareZone);
+      if (bkClass) fareClass = ALASKA_BOOKING_CLASS[bkClass[1]];
+    }
+
+    segments.push({
+      ...global,
+      flightNumber: flightNum,
+      origin,
+      destination,
+      date,
+      departureTime: departureTime ?? undefined,
+      arrivalTime:   arrivalTime   ?? undefined,
+      airline,
+      operatingCarrier,
+      fareClass,
+    });
+  }
+
+  return segments;
+}
+
 // ─── Route-only fallback ──────────────────────────────────────────────────────
 // For emails with no parseable flight number (some regional carriers, travel agencies)
 
@@ -616,9 +739,13 @@ export function parseAllLegs(raw: string): ParsedFlight[] {
   const text = normalize(raw);
   const global = extractGlobal(text);
 
-  // Primary: anchor on flight numbers
+  // Primary: anchor on carrier-code + flight number (e.g. "AA 1234", "EY4")
   const segments = extractSegments(text, global);
   if (segments.length > 0) return segments;
+
+  // Secondary: anchor on "Flight NNNN" label near airline name
+  const labelSegments = extractByFlightLabel(text, global);
+  if (labelSegments.length > 0) return labelSegments;
 
   // Fallback: route pattern (no flight number found)
   const single = routeFallback(text, global);

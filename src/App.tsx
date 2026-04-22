@@ -8,6 +8,8 @@ import { FlightLog } from './components/FlightLog';
 import { FlightForm } from './components/FlightForm';
 import { MissingMilesHelper } from './components/MissingMilesHelper';
 import { EmailImporter } from './components/EmailImporter';
+import { CsvImporter } from './components/CsvImporter';
+import type { MatchedUpdate } from './components/CsvImporter';
 
 const DEFAULT_PROFILE: UserProfile = {
   memberNumber: '',
@@ -23,6 +25,7 @@ export default function App() {
   const [editingFlight, setEditingFlight] = useState<LoggedFlight | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [showEmailImporter, setShowEmailImporter] = useState(false);
+  const [showCsvImporter, setShowCsvImporter] = useState(false);
   const [claimFlight, setClaimFlight] = useState<LoggedFlight | null>(null);
 
   // Auto-advance upcoming flights to awaiting_posting once the flight date has passed
@@ -105,6 +108,23 @@ export default function App() {
     };
   }
 
+  function handleCsvImport(updates: MatchedUpdate[], newFlights: LoggedFlight[]) {
+    setShowCsvImporter(false);
+    setFlights(prev => {
+      const updated = prev.map(f => {
+        const match = updates.find(u => u.id === f.id);
+        if (!match) return f;
+        const status =
+          match.actualMiles === f.expectedMiles &&
+          (match.actualStatusPoints === 0 || match.actualStatusPoints === f.expectedStatusPoints)
+            ? 'posted' as const
+            : 'discrepancy' as const;
+        return { ...f, actualMiles: match.actualMiles, actualStatusPoints: match.actualStatusPoints, status };
+      });
+      return [...updated, ...newFlights];
+    });
+  }
+
   function handleEmailImport(parsedLegs: ParsedFlight[]) {
     // Auto-fill member number from first leg that has one
     const memberNumber = parsedLegs.find(p => p.memberNumber)?.memberNumber;
@@ -135,6 +155,7 @@ export default function App() {
         flights={flights}
         onAdd={() => { setEditingFlight(null); setShowForm(true); }}
         onImportEmail={() => setShowEmailImporter(true)}
+        onImportCsv={() => setShowCsvImporter(true)}
         onEdit={f => { setEditingFlight(f); setShowForm(true); }}
         onDelete={id => setFlights(prev => prev.filter(f => f.id !== id))}
         onUpdateActual={handleUpdateActual}
@@ -145,6 +166,15 @@ export default function App() {
         <EmailImporter
           onImport={handleEmailImport}
           onClose={() => setShowEmailImporter(false)}
+        />
+      )}
+
+      {showCsvImporter && (
+        <CsvImporter
+          flights={flights}
+          profile={profile}
+          onImport={handleCsvImport}
+          onClose={() => setShowCsvImporter(false)}
         />
       )}
 

@@ -46,13 +46,14 @@ interface Props {
   flights: LoggedFlight[];
   onAdd: () => void;
   onImportEmail: () => void;
+  onImportCsv: () => void;
   onEdit: (f: LoggedFlight) => void;
   onDelete: (id: string) => void;
   onUpdateActual: (id: string, actual: { actualMiles: number | null; actualStatusPoints: number | null }) => void;
   onFileClaim: (f: LoggedFlight) => void;
 }
 
-export function FlightLog({ flights, onAdd, onImportEmail, onEdit, onDelete, onUpdateActual, onFileClaim }: Props) {
+export function FlightLog({ flights, onAdd, onImportEmail, onImportCsv, onEdit, onDelete, onUpdateActual, onFileClaim }: Props) {
   const [enteringId, setEnteringId] = useState<string | null>(null);
   const [actualDraft, setActualDraft] = useState({ miles: '', sp: '' });
 
@@ -84,7 +85,13 @@ export function FlightLog({ flights, onAdd, onImportEmail, onEdit, onDelete, onU
     return (
       <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
         <p className="text-gray-400 mb-4">No flights logged yet.</p>
-        <div className="flex gap-3 justify-center">
+        <div className="flex gap-3 justify-center flex-wrap">
+          <button
+            onClick={onImportCsv}
+            className="px-5 py-2.5 text-sm font-semibold border border-green-600 text-green-700 rounded-lg hover:bg-green-50"
+          >
+            Import Activity CSV
+          </button>
           <button
             onClick={onImportEmail}
             className="px-5 py-2.5 text-sm font-semibold border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50"
@@ -108,10 +115,16 @@ export function FlightLog({ flights, onAdd, onImportEmail, onEdit, onDelete, onU
         <h2 className="text-lg font-semibold text-gray-900">Flight Log</h2>
         <div className="flex gap-2">
           <button
+            onClick={onImportCsv}
+            className="px-4 py-2 text-sm font-semibold border border-green-600 text-green-700 rounded-lg hover:bg-green-50"
+          >
+            Import CSV
+          </button>
+          <button
             onClick={onImportEmail}
             className="px-4 py-2 text-sm font-semibold border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50"
           >
-            Import from Email
+            Import Email
           </button>
           <button
             onClick={onAdd}
@@ -129,8 +142,28 @@ export function FlightLog({ flights, onAdd, onImportEmail, onEdit, onDelete, onU
           const canClaim = today >= eligibleDate;
           const pastDeadline = today > deadlineDate;
 
+          const milesGap = flight.actualMiles !== null ? flight.actualMiles - flight.expectedMiles : 0;
+          const spGap = flight.actualMiles !== null ? (flight.actualStatusPoints ?? 0) - flight.expectedStatusPoints : 0;
+          const favorable = flight.status === 'discrepancy' && milesGap > 0;
+          const unfavorable = flight.status === 'discrepancy' && milesGap < 0;
+          // Past the waiting period with no actuals entered
+          const isOverdue = flight.status === 'awaiting_posting' && today >= eligibleDate;
+
+          const badgeStyle =
+            favorable   ? 'bg-green-100 text-green-700' :
+            isOverdue   ? 'bg-red-100 text-red-700'     :
+            STATUS_STYLES[flight.status];
+          const badgeLabel =
+            favorable   ? 'Bonus Miles' :
+            isOverdue   ? 'Overdue'     :
+            STATUS_LABELS[flight.status];
+
+          const cardBorder = isOverdue || unfavorable
+            ? 'border-red-300'
+            : 'border-gray-200';
+
           return (
-            <div key={flight.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div key={flight.id} className={`bg-white border rounded-xl overflow-hidden ${cardBorder}`}>
               <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
                 <div className="flex items-center gap-3 flex-wrap">
                   <span className="text-sm text-gray-500">{fmt(flight.date)}</span>
@@ -139,8 +172,8 @@ export function FlightLog({ flights, onAdd, onImportEmail, onEdit, onDelete, onU
                   </span>
                   <span className="text-gray-700">{flight.origin} → {flight.destination}</span>
                 </div>
-                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full shrink-0 ${STATUS_STYLES[flight.status]}`}>
-                  {STATUS_LABELS[flight.status]}
+                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full shrink-0 ${badgeStyle}`}>
+                  {badgeLabel}
                 </span>
               </div>
 
@@ -168,7 +201,7 @@ export function FlightLog({ flights, onAdd, onImportEmail, onEdit, onDelete, onU
                   {flight.actualMiles !== null && (
                     <div>
                       <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">Actual</p>
-                      <p className={`text-sm font-semibold ${flight.status === 'discrepancy' ? 'text-red-600' : 'text-green-600'}`}>
+                      <p className={`text-sm font-semibold ${unfavorable ? 'text-red-600' : 'text-green-600'}`}>
                         {flight.actualMiles.toLocaleString()} mi · {(flight.actualStatusPoints ?? 0).toLocaleString()} SP
                       </p>
                     </div>
@@ -176,39 +209,61 @@ export function FlightLog({ flights, onAdd, onImportEmail, onEdit, onDelete, onU
                   {flight.status === 'discrepancy' && flight.actualMiles !== null && (
                     <div>
                       <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">Gap</p>
-                      <p className="text-sm font-semibold text-red-600">
-                        {(flight.actualMiles - flight.expectedMiles > 0 ? '+' : '')}
-                        {(flight.actualMiles - flight.expectedMiles).toLocaleString()} mi
+                      <p className={`text-sm font-semibold ${favorable ? 'text-green-600' : 'text-red-600'}`}>
+                        {milesGap > 0 ? '+' : ''}{milesGap.toLocaleString()} mi
                         {' · '}
-                        {((flight.actualStatusPoints ?? 0) - flight.expectedStatusPoints > 0 ? '+' : '')}
-                        {((flight.actualStatusPoints ?? 0) - flight.expectedStatusPoints).toLocaleString()} SP
+                        {spGap > 0 ? '+' : ''}{spGap.toLocaleString()} SP
                       </p>
                     </div>
                   )}
                 </div>
 
-                {/* Awaiting posting hint */}
-                {flight.status === 'awaiting_posting' && (
+                {/* Overdue: past waiting period with no actuals */}
+                {isOverdue && (
+                  <p className="text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2 mb-3">
+                    Points haven't posted after {CLAIM_WAIT_DAYS[flight.airline] ?? 14}+ days — check your Atmos account and enter actuals, or file a missing miles claim.
+                  </p>
+                )}
+
+                {/* Normal awaiting hint (not yet overdue) */}
+                {flight.status === 'awaiting_posting' && !isOverdue && (
                   <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 mb-3">
                     Miles typically post in 3–7 days (Alaska/Hawaiian) or up to 14 days (partner flights).
                     Check your account then come back to enter actuals.
                   </p>
                 )}
 
-                {/* Discrepancy timing warnings */}
-                {flight.status === 'discrepancy' && !canClaim && (
+                {/* Unfavorable discrepancy — missing miles banner */}
+                {unfavorable && canClaim && !pastDeadline && (
+                  <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+                    <p className="text-xs text-red-700 font-medium">
+                      You're owed {Math.abs(milesGap).toLocaleString()} missing miles — file a claim before {fmt(deadlineDate)}.
+                    </p>
+                    <button
+                      onClick={() => onFileClaim(flight)}
+                      className="ml-3 shrink-0 text-xs px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold"
+                    >
+                      File Claim →
+                    </button>
+                  </div>
+                )}
+
+                {/* Favorable discrepancy note */}
+                {favorable && (
+                  <p className="text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2 mb-3">
+                    You received {Math.abs(milesGap).toLocaleString()} extra miles — no action needed.
+                  </p>
+                )}
+
+                {/* Discrepancy timing — not yet eligible */}
+                {unfavorable && !canClaim && (
                   <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2 mb-3">
                     Eligible to file claim on {fmt(eligibleDate)} ({flight.airline === 'partner' ? '14' : '7'}-day waiting period).
                   </p>
                 )}
-                {flight.status === 'discrepancy' && canClaim && pastDeadline && (
+                {unfavorable && canClaim && pastDeadline && (
                   <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-3">
                     Claim deadline has passed (12 months from flight date).
-                  </p>
-                )}
-                {flight.status === 'discrepancy' && canClaim && !pastDeadline && (
-                  <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2 mb-3">
-                    Claim deadline: {fmt(deadlineDate)} · Have your boarding pass and passenger receipt ready.
                   </p>
                 )}
 
@@ -257,20 +312,20 @@ export function FlightLog({ flights, onAdd, onImportEmail, onEdit, onDelete, onU
                         {flight.actualMiles !== null ? 'Edit Actual' : 'Enter Actual'}
                       </button>
                     )}
+                    {isOverdue && (
+                      <button
+                        onClick={() => onFileClaim(flight)}
+                        className="text-xs px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold"
+                      >
+                        File Claim →
+                      </button>
+                    )}
                     <button
                       onClick={() => onEdit(flight)}
                       className="text-xs px-3 py-1.5 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50"
                     >
                       Edit
                     </button>
-                    {flight.status === 'discrepancy' && canClaim && !pastDeadline && (
-                      <button
-                        onClick={() => onFileClaim(flight)}
-                        className="text-xs px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold"
-                      >
-                        File Claim
-                      </button>
-                    )}
                     <button
                       onClick={() => onDelete(flight.id)}
                       className="text-xs px-3 py-1.5 border border-red-200 rounded-lg text-red-500 hover:bg-red-50 ml-auto"
