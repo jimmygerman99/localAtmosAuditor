@@ -25,27 +25,44 @@ const DATE_START_RE = /^\d{2}\/\d{2}\/\d{4},/;
 // partner rates. The raw airline name is preserved on the parsed row.
 
 const AIRLINE_MAP: [RegExp, Airline][] = [
-  [/alaska airlines/i,   'alaska'],
-  [/hawaiian airlines/i, 'hawaiian'],
-  [/american airlines/i, 'partner'],
-  [/british airways/i,   'partner'],
-  [/japan airlines/i,    'partner'],
-  [/cathay pacific/i,    'partner'],
-  [/\bfinnair\b/i,       'partner'],
-  [/\biberia\b/i,        'partner'],
-  [/aer lingus/i,        'partner'],
-  [/\blatam\b/i,         'partner'],
-  [/malaysia airlines/i, 'partner'],
-  [/\bqantas\b/i,        'partner'],
-  [/royal jordanian/i,   'partner'],
-  [/srilankan/i,         'partner'],
-  [/\bstarlux\b/i,       'partner'],
-  [/air tahiti nui/i,    'partner'],
-  [/\bwestjet\b/i,       'partner'],
-  [/korean air/i,        'partner'],
-  [/qatar airways/i,     'partner'],
-  [/united airlines/i,   'partner'],
-  [/delta air lines/i,   'partner'],
+  // Alaska & Hawaiian must be explicit — everything else defaults to 'partner'
+  [/alaska airlines/i,        'alaska'],
+  [/hawaiian airlines/i,      'hawaiian'],
+  // Oneworld partners
+  [/american airlines/i,      'partner'],
+  [/british airways/i,        'partner'],
+  [/cathay pacific/i,         'partner'],
+  [/fiji airways/i,           'partner'],
+  [/\bfinnair\b/i,            'partner'],
+  [/\biberia\b/i,             'partner'],
+  [/japan airlines/i,         'partner'],
+  [/malaysia airlines/i,      'partner'],
+  [/oman air/i,               'partner'],
+  [/\bqantas\b/i,             'partner'],
+  [/qatar airways/i,          'partner'],
+  [/royal air maroc/i,        'partner'],
+  [/royal jordanian/i,        'partner'],
+  [/srilankan/i,              'partner'],
+  // Earn & redeem partners
+  [/aer lingus/i,             'partner'],
+  [/air tahiti nui/i,         'partner'],
+  [/\bcondor\b/i,             'partner'],
+  [/hainan airlines/i,        'partner'],
+  [/\bicelandair\b/i,         'partner'],
+  [/korean air/i,             'partner'],
+  [/porter airlines/i,        'partner'],
+  [/\bstarlux\b/i,            'partner'],
+  // Book direct
+  [/aleutian airways/i,       'partner'],
+  [/\bbahamasair\b/i,         'partner'],
+  [/\bcape air\b/i,           'partner'],
+  [/contour airlines/i,       'partner'],
+  [/ita airways/i,            'partner'],
+  [/kenmore air/i,            'partner'],
+  [/mokulele airlines/i,      'partner'],
+  [/philippine airlines/i,    'partner'],
+  [/singapore airlines/i,     'partner'],
+  [/southern airways/i,       'partner'],
 ];
 
 function detectAirline(name: string): Airline {
@@ -181,17 +198,19 @@ export function parseCsvActivity(csvText: string): CsvParseResult {
 
       const [, origin, destination, carrierCode, flightNumber, fareClassLetter] = m;
 
+      const airline = detectAirline(airlineName);
       result.earned.push({
         postingDate,
         flightDate:         null,
         airlineName,
-        airline:            detectAirline(airlineName),
+        airline,
         carrierCode,
         flightNumber,
         origin,
         destination,
         fareClassLetter,
         isAwardTravel,
+        bookingChannel:     airline === 'alaska' || airline === 'hawaiian' ? 'atmos' : 'direct',
         actualMiles:        rawRow.points,
         actualStatusPoints: rawRow.statusPoints,
       });

@@ -65,6 +65,7 @@ export interface FlightEarned {
   destination:        string;        // IATA
   fareClassLetter:    string;        // single booking-class letter from CSV
   isAwardTravel:      boolean;       // true when activity contains "AWARD TRAVEL"
+  bookingChannel:     BookingChannel; // 'atmos' = booked via Alaska portal, 'direct' = partner's site
   actualMiles:        number;        // Points column from CSV
   actualStatusPoints: number;        // Status Points column from CSV
 }
@@ -95,7 +96,7 @@ export type AuditStatus = 'ok' | 'missing' | 'bonus';
 
 export interface AuditRow {
   flight:               FlightEarned;
-  resolvedCabin:        AlaskaFareClass | PartnerFareClass;
+  resolvedCabin:        AlaskaFareClass | PartnerFareClass | 'award';
   bookingChannel:       BookingChannel;
   distanceMiles:        number;
   expectedMiles:        number;
@@ -103,4 +104,6 @@ export interface AuditRow {
   diffMiles:            number;        // actual − expected (negative = missing)
   diffStatusPoints:     number;
   status:               AuditStatus;
+  needsTicketPrice:     boolean;
+  cabinUnknown:         boolean;
 }
