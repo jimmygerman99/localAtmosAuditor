@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(cp \"/Users/jamesgerman/CS Projects/atmosRewards/atmosRewardsCalculator/src/data/airports.ts\" \"/Users/jamesgerman/CS Projects/atmosRewards/atmosAudit/src/data/airports.ts\")",
+      "Bash(cp \"/Users/jamesgerman/CS Projects/atmosRewards/atmosRewardsCalculator/src/utils/haversine.ts\" \"/Users/jamesgerman/CS Projects/atmosRewards/atmosAudit/src/utils/haversine.ts\")",
+      "Bash(cp \"/Users/jamesgerman/CS Projects/atmosRewards/atmosRewardsCalculator/src/data/flights.ts\" \"/Users/jamesgerman/CS Projects/atmosRewards/atmosAudit/src/data/flights.ts\")"
     ]
   }
 }

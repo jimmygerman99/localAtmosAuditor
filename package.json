@@ -1,7 +1,7 @@
 {
   "name": "atmosaudit",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -18,7 +18,6 @@
     "vite": "^8.0.9"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.90.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
   }
